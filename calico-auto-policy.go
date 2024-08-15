@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -52,16 +53,22 @@ func main() {
 				typedObj := obj.(*unstructured.Unstructured)
 
 				log.Printf("new NetworkPolicy: %s/%s", typedObj.GetNamespace(), typedObj.GetName())
+
+				addPolicy(dynclientset, typedObj)
 			},
 			UpdateFunc: func(oldObj, obj interface{}) {
 				typedObj := obj.(*unstructured.Unstructured)
 
 				log.Printf("NetworkPolicy: %s/%s", typedObj.GetNamespace(), typedObj.GetName())
+
+				addPolicy(dynclientset, typedObj)
 			},
 			DeleteFunc: func(obj interface{}) {
 				typedObj := obj.(*unstructured.Unstructured)
 
 				log.Printf("deleted NetworkPolicy: %s/%s", typedObj.GetNamespace(), typedObj.GetName())
+
+				removePolicy(dynclientset, typedObj.GetNamespace(), typedObj.GetName())
 			},
 		},
 		5*time.Minute,
@@ -83,4 +90,47 @@ func main() {
 
 	// Run until interrupted
 	informer.Run(stopChannel)
+}
+
+func generateCalicoPolicy(k8sPolicy *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+	calicoPolicy := &unstructured.Unstructured{}
+	calicoPolicy.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "crd.projectcalico.org",
+		Version: "v1",
+		Kind:    "NetworkPolicy",
+	})
+
+	// TODO: Fill in the instance
+
+	return calicoPolicy, nil
+}
+
+func addPolicy(dynclientset *dynamic.DynamicClient, k8sPolicy *unstructured.Unstructured) error {
+	calicoPolicy, err := generateCalicoPolicy(k8sPolicy)
+	if err != nil {
+		return err
+	}
+
+	_, err = dynclientset.Resource(schema.GroupVersionResource{
+		Group:    "networking.k8s.io",
+		Version:  "v1",
+		Resource: "networkpolicies",
+	}).Namespace(k8sPolicy.GetNamespace()).Create(
+		context.TODO(),
+		calicoPolicy,
+		metav1.CreateOptions{},
+	)
+	return err
+}
+
+func removePolicy(dynclientset *dynamic.DynamicClient, namespace string, k8sPolicyName string) error {
+	return dynclientset.Resource(schema.GroupVersionResource{
+		Group:    "networking.k8s.io",
+		Version:  "v1",
+		Resource: "networkpolicies",
+	}).Namespace(namespace).Delete(
+		context.TODO(),
+		k8sPolicyName,
+		metav1.DeleteOptions{},
+	)
 }
