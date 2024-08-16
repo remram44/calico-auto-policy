@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -16,6 +17,8 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/remram44/calico-auto-policy/internal/calico-selectors"
 )
 
 func main() {
@@ -100,7 +103,36 @@ func generateCalicoPolicy(k8sPolicy *unstructured.Unstructured) (*unstructured.U
 		Kind:    "NetworkPolicy",
 	})
 
+	// Get the podSelector of the Kubernetes NetworkPolicy
+	k8sPolicySpecUntyped, ok := k8sPolicy.Object["spec"]
+	if !ok {
+		return nil, fmt.Errorf("Invalid Kubernetes NetworkPolicy: no spec")
+	}
+	k8sPolicySpec, ok := k8sPolicySpecUntyped.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("Invalid Kubernetes NetworkPolicy: invalid spec")
+	}
+	k8sPolicySelectorUntyped, ok := k8sPolicySpec["podSelector"]
+	if !ok {
+		return nil, fmt.Errorf("Invalid Kubernetes NetworkPolicy: no podSelector")
+	}
+	k8sPolicySelector, ok := k8sPolicySelectorUntyped.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("Invalid Kubernetes NetworkPolicy: invalid podSelector")
+	}
+
+	// Convert it to a Calico NetworkPolicy selector
+	calicoPolicySelector, err := calico_selectors.KubernetesToCalicoNetworkPolicySelectors(
+		k8sPolicySelector,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: Fill in the instance
+	calicoPolicySpec := make(map[string]interface{})
+	calicoPolicySpec["selector"] = calicoPolicySelector
+	calicoPolicy.Object["spec"] = calicoPolicySpec
 
 	return calicoPolicy, nil
 }
