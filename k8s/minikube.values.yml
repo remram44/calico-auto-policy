@@ -1,0 +1,4 @@
+image:
+  repository: calico-auto-policy
+  pullPolicy: IfNotPresent
+  tag: latest
