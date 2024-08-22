@@ -1,0 +1,56 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  code-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Check code formatting
+        run: |
+          test "$(find . -name \*.go -exec gofmt -l -w {} +)" = ""
+
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Run unit tests
+        run: |
+          go test ./...
+      - name: Install minikube
+        run: |
+          sudo mkdir -p /usr/local/bin
+          sudo curl -Lo /usr/local/bin/minikube https://github.com/kubernetes/minikube/releases/download/v1.33.1/minikube-linux-amd64
+          sudo chmod +x /usr/local/bin/minikube
+          sudo curl -Lo /usr/local/bin/kubectl https://dl.k8s.io/release/v1.29.6/bin/linux/amd64/kubectl
+          sudo chmod +x /usr/local/bin/kubectl
+      - name: Start Kubernetes cluster
+        run: |
+          minikube start --kubernetes-version=1.29.6 --driver=docker --cni=calico --nodes=1 --container-runtime=docker --ports=8000:30808
+          kubectl describe node
+      - name: Build image
+        run: |
+          eval $(minikube docker-env)
+          docker build . -t calico-auto-policy
+      - name: Start calico-auto-policy on Kubernetes
+        run: |
+          helm install calico-auto-policy k8s/helm --namespace calico-auto-policy --create-namespace -f k8s/minikube.values.yml
+          # Wait for the pods to be available
+          if ! kubectl -n calico-auto-policy wait --timeout=2m --for=condition=Available deploy --all; then
+            kubectl get pod
+            exit 1
+          fi
+      - name: Run integration tests
+        run: |
+          go test --tags=k8s_integration ./...
