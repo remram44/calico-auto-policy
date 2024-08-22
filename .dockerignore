@@ -1,0 +1,23 @@
+**/.env
+bin
+calico-auto-policy
+
+# Git
+**/.git
+**/.gitignore
+
+# ViM
+**/.*.swp
+
+# Emacs
+**/#*#
+
+# OS files
+**/.DS_Store
+**/desktop.ini
+
+# Archives
+**/*.tar
+**/*.tar.gz
+**/*.tar.bz2
+**/*.zip
