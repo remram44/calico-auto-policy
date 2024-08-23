@@ -24,6 +24,22 @@ import (
 )
 
 func main() {
+	// Create the app context
+	var ctx context.Context
+	{
+		var ctxCancel context.CancelFunc
+		ctx, ctxCancel = context.WithCancel(context.Background())
+
+		// Cancel context on signal
+		go func() {
+			sigs := make(chan os.Signal, 1)
+			signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+			sig := <-sigs
+			log.Printf("Exiting on signal: %s", sig)
+			ctxCancel()
+		}()
+	}
+
 	// Load the config
 	kubeconfig := os.Getenv("KUBECONFIG")
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -75,37 +91,37 @@ func main() {
 	_, err = informer.AddEventHandlerWithResyncPeriod(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				typedObj := obj.(*unstructured.Unstructured)
+				k8sPolicy := obj.(*unstructured.Unstructured)
 
 				log.Printf(
 					"new NetworkPolicy: %s/%s",
-					typedObj.GetNamespace(),
-					typedObj.GetName(),
+					k8sPolicy.GetNamespace(),
+					k8sPolicy.GetName(),
 				)
 
-				addPolicy(dynclientset, typedObj, policyTemplate)
+				addPolicy(dynclientset, k8sPolicy, policyTemplate, ctx)
 			},
 			UpdateFunc: func(oldObj, obj interface{}) {
-				typedObj := obj.(*unstructured.Unstructured)
+				k8sPolicy := obj.(*unstructured.Unstructured)
 
 				log.Printf(
-					"NetworkPolicy: %s/%s",
-					typedObj.GetNamespace(),
-					typedObj.GetName(),
+					"updated/resynced NetworkPolicy: %s/%s",
+					k8sPolicy.GetNamespace(),
+					k8sPolicy.GetName(),
 				)
 
-				addPolicy(dynclientset, typedObj, policyTemplate)
+				addPolicy(dynclientset, k8sPolicy, policyTemplate, ctx)
 			},
 			DeleteFunc: func(obj interface{}) {
-				typedObj := obj.(*unstructured.Unstructured)
+				k8sPolicy := obj.(*unstructured.Unstructured)
 
 				log.Printf(
 					"deleted NetworkPolicy: %s/%s",
-					typedObj.GetNamespace(),
-					typedObj.GetName(),
+					k8sPolicy.GetNamespace(),
+					k8sPolicy.GetName(),
 				)
 
-				removePolicy(dynclientset, typedObj.GetNamespace(), typedObj.GetName())
+				removePolicy(dynclientset, k8sPolicy, ctx)
 			},
 		},
 		5*time.Minute,
@@ -114,19 +130,8 @@ func main() {
 		log.Fatalf("Can't setup informer: %s", err)
 	}
 
-	// Create a channel, closed on signal
-	stopChannel := make(chan struct{})
-
-	go func() {
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-		sig := <-sigs
-		log.Printf("Exiting on signal: %s", sig)
-		close(stopChannel)
-	}()
-
 	// Run until interrupted
-	informer.Run(stopChannel)
+	informer.Run(ctx.Done())
 }
 
 func deepCopyJsonInto(in map[string]interface{}, out map[string]interface{}) {
@@ -220,6 +225,7 @@ func addPolicy(
 	dynclientset *dynamic.DynamicClient,
 	k8sPolicy *unstructured.Unstructured,
 	policyTemplate map[string]interface{},
+	ctx context.Context,
 ) error {
 	calicoPolicy, err := generateCalicoPolicy(k8sPolicy, policyTemplate)
 	if err != nil {
@@ -231,7 +237,7 @@ func addPolicy(
 		Version:  "v1",
 		Resource: "networkpolicies",
 	}).Namespace(k8sPolicy.GetNamespace()).Create(
-		context.TODO(),
+		ctx,
 		calicoPolicy,
 		metav1.CreateOptions{},
 	)
@@ -240,16 +246,16 @@ func addPolicy(
 
 func removePolicy(
 	dynclientset *dynamic.DynamicClient,
-	namespace string,
-	k8sPolicyName string,
+	k8sPolicy *unstructured.Unstructured,
+	ctx context.Context,
 ) error {
 	return dynclientset.Resource(schema.GroupVersionResource{
 		Group:    "networking.k8s.io",
 		Version:  "v1",
 		Resource: "networkpolicies",
-	}).Namespace(namespace).Delete(
-		context.TODO(),
-		k8sPolicyName,
+	}).Namespace(k8sPolicy.GetNamespace()).Delete(
+		ctx,
+		k8sPolicy.GetName(),
 		metav1.DeleteOptions{},
 	)
 }
