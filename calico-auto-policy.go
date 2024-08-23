@@ -57,13 +57,15 @@ func main() {
 	}
 
 	// Setup an informer
-	var informerFactory dynamicinformer.DynamicSharedInformerFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(
+	var informerFactory dynamicinformer.DynamicSharedInformerFactory
+	informerFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(
 		dynclientset,
 		5*time.Minute,
 		metav1.NamespaceAll,
 		nil,
 	)
-	var informer cache.SharedIndexInformer = informerFactory.ForResource(schema.GroupVersionResource{
+	var informer cache.SharedIndexInformer
+	informer = informerFactory.ForResource(schema.GroupVersionResource{
 		Group:    "networking.k8s.io",
 		Version:  "v1",
 		Resource: "networkpolicies",
@@ -75,21 +77,33 @@ func main() {
 			AddFunc: func(obj interface{}) {
 				typedObj := obj.(*unstructured.Unstructured)
 
-				log.Printf("new NetworkPolicy: %s/%s", typedObj.GetNamespace(), typedObj.GetName())
+				log.Printf(
+					"new NetworkPolicy: %s/%s",
+					typedObj.GetNamespace(),
+					typedObj.GetName(),
+				)
 
 				addPolicy(dynclientset, typedObj, policyTemplate)
 			},
 			UpdateFunc: func(oldObj, obj interface{}) {
 				typedObj := obj.(*unstructured.Unstructured)
 
-				log.Printf("NetworkPolicy: %s/%s", typedObj.GetNamespace(), typedObj.GetName())
+				log.Printf(
+					"NetworkPolicy: %s/%s",
+					typedObj.GetNamespace(),
+					typedObj.GetName(),
+				)
 
 				addPolicy(dynclientset, typedObj, policyTemplate)
 			},
 			DeleteFunc: func(obj interface{}) {
 				typedObj := obj.(*unstructured.Unstructured)
 
-				log.Printf("deleted NetworkPolicy: %s/%s", typedObj.GetNamespace(), typedObj.GetName())
+				log.Printf(
+					"deleted NetworkPolicy: %s/%s",
+					typedObj.GetNamespace(),
+					typedObj.GetName(),
+				)
 
 				removePolicy(dynclientset, typedObj.GetNamespace(), typedObj.GetName())
 			},
@@ -138,11 +152,13 @@ func generateCalicoPolicy(k8sPolicy *unstructured.Unstructured) (*unstructured.U
 	}
 	k8sPolicySelector, ok := k8sPolicySelectorUntyped.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("Invalid Kubernetes NetworkPolicy: invalid podSelector")
+		return nil, fmt.Errorf(
+			"Invalid Kubernetes NetworkPolicy: invalid podSelector",
+		)
 	}
 
 	// Convert it to a Calico NetworkPolicy selector
-	calicoPolicySelector, err := calico_selectors.KubernetesToCalicoNetworkPolicySelectors(
+	calicoPolicySelector, err := calico_selectors.KubernetesToCalico(
 		k8sPolicySelector,
 	)
 	if err != nil {
@@ -179,7 +195,11 @@ func addPolicy(
 	return err
 }
 
-func removePolicy(dynclientset *dynamic.DynamicClient, namespace string, k8sPolicyName string) error {
+func removePolicy(
+	dynclientset *dynamic.DynamicClient,
+	namespace string,
+	k8sPolicyName string,
+) error {
 	return dynclientset.Resource(schema.GroupVersionResource{
 		Group:    "networking.k8s.io",
 		Version:  "v1",

@@ -15,7 +15,7 @@ func mustDecode(jsonString string) map[string]interface{} {
 }
 
 func translate(jsonString string, t *testing.T) string {
-	calicoSelector, err := KubernetesToCalicoNetworkPolicySelectors(mustDecode(jsonString))
+	calicoSelector, err := KubernetesToCalico(mustDecode(jsonString))
 	if err != nil {
 		t.Fatal(err)
 	}

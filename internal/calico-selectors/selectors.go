@@ -107,7 +107,7 @@ func processMatchExpressions(k8sPolicy map[string]interface{}, selector *[]strin
 	return nil
 }
 
-func KubernetesToCalicoNetworkPolicySelectors(k8sPolicy map[string]interface{}) (string, error) {
+func KubernetesToCalico(k8sPolicy map[string]interface{}) (string, error) {
 	var selector []string
 
 	// Convert matchLabels section
