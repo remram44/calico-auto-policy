@@ -129,14 +129,47 @@ func main() {
 	informer.Run(stopChannel)
 }
 
-func generateCalicoPolicy(k8sPolicy *unstructured.Unstructured) (*unstructured.Unstructured, error) {
-	calicoPolicy := &unstructured.Unstructured{}
-	calicoPolicy.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "crd.projectcalico.org",
-		Version: "v1",
-		Kind:    "NetworkPolicy",
-	})
+func deepCopyJsonInto(in map[string]interface{}, out map[string]interface{}) {
+	for key, value := range in {
+		switch v := value.(type) {
+		case map[string]interface{}:
+			_ = key
+			_ = v
+		}
+	}
+}
 
+func deepCopyJsonMap(in map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{})
+	for key, value := range in {
+		out[key] = deepCopyJson(value)
+	}
+	return out
+}
+
+func deepCopyJson(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return deepCopyJsonMap(v)
+	case []interface{}:
+		newList := make([]interface{}, len(v))
+		for i := range v {
+			newList[i] = deepCopyJson(v[i])
+		}
+		return newList
+	case int:
+		return v
+	case string:
+		return v
+	default:
+		panic(fmt.Sprintf("Can't deep copy %T", v))
+	}
+}
+
+func generateCalicoPolicy(
+	k8sPolicy *unstructured.Unstructured,
+	policyTemplate map[string]interface{},
+) (*unstructured.Unstructured, error) {
 	// Get the podSelector of the Kubernetes NetworkPolicy
 	k8sPolicySpecUntyped, ok := k8sPolicy.Object["spec"]
 	if !ok {
@@ -165,10 +198,20 @@ func generateCalicoPolicy(k8sPolicy *unstructured.Unstructured) (*unstructured.U
 		return nil, err
 	}
 
-	// TODO: Fill in the instance
-	calicoPolicySpec := make(map[string]interface{})
-	calicoPolicySpec["selector"] = calicoPolicySelector
-	calicoPolicy.Object["spec"] = calicoPolicySpec
+	// Make a policy from the template
+	calicoPolicy := &unstructured.Unstructured{
+		Object: policyTemplate,
+	}
+	// calicoPolicy = calicoPolicy.DeepCopy() // Fails: cannot deep copy int
+	calicoPolicy.Object = deepCopyJsonMap(calicoPolicy.Object)
+
+	// Put in the selector
+	unstructured.SetNestedField(
+		calicoPolicy.Object,
+		calicoPolicySelector,
+		"spec",
+		"selector",
+	)
 
 	return calicoPolicy, nil
 }
@@ -176,9 +219,9 @@ func generateCalicoPolicy(k8sPolicy *unstructured.Unstructured) (*unstructured.U
 func addPolicy(
 	dynclientset *dynamic.DynamicClient,
 	k8sPolicy *unstructured.Unstructured,
-	policyTemplate interface{},
+	policyTemplate map[string]interface{},
 ) error {
-	calicoPolicy, err := generateCalicoPolicy(k8sPolicy)
+	calicoPolicy, err := generateCalicoPolicy(k8sPolicy, policyTemplate)
 	if err != nil {
 		return err
 	}
