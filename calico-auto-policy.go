@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -29,6 +31,24 @@ func main() {
 		log.Fatalf("Can't load config: %s", err)
 	}
 	config.UserAgent = "calico-auto-policy"
+
+	// Load the policy
+	var policyTemplate map[string]interface{}
+	{
+		path := os.Getenv("CALICO_AUTO_POLICY_TEMPLATE")
+		if path == "" {
+			path = "/etc/calico-auto-policy/policy.yaml"
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			log.Fatalf("Can't open policy template YAML: %s: %s", path, err)
+		}
+		decoder := yaml.NewDecoder(file)
+		err = decoder.Decode(&policyTemplate)
+		if err != nil {
+			log.Fatalf("Can't parse policy template YAML: %s: %s", path, err)
+		}
+	}
 
 	// Create the dynamic clientset
 	dynclientset, err := dynamic.NewForConfig(config)
@@ -57,14 +77,14 @@ func main() {
 
 				log.Printf("new NetworkPolicy: %s/%s", typedObj.GetNamespace(), typedObj.GetName())
 
-				addPolicy(dynclientset, typedObj)
+				addPolicy(dynclientset, typedObj, policyTemplate)
 			},
 			UpdateFunc: func(oldObj, obj interface{}) {
 				typedObj := obj.(*unstructured.Unstructured)
 
 				log.Printf("NetworkPolicy: %s/%s", typedObj.GetNamespace(), typedObj.GetName())
 
-				addPolicy(dynclientset, typedObj)
+				addPolicy(dynclientset, typedObj, policyTemplate)
 			},
 			DeleteFunc: func(obj interface{}) {
 				typedObj := obj.(*unstructured.Unstructured)
@@ -137,7 +157,11 @@ func generateCalicoPolicy(k8sPolicy *unstructured.Unstructured) (*unstructured.U
 	return calicoPolicy, nil
 }
 
-func addPolicy(dynclientset *dynamic.DynamicClient, k8sPolicy *unstructured.Unstructured) error {
+func addPolicy(
+	dynclientset *dynamic.DynamicClient,
+	k8sPolicy *unstructured.Unstructured,
+	policyTemplate interface{},
+) error {
 	calicoPolicy, err := generateCalicoPolicy(k8sPolicy)
 	if err != nil {
 		return err

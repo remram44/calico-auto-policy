@@ -12,7 +12,7 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-policy: |
+policy:
   apiVersion: projectcalico.org/v3
   kind: NetworkPolicy
   metadata:

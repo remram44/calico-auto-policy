@@ -6,4 +6,4 @@ metadata:
     {{- include "calico-auto-policy.labels" . | nindent 4 }}
 data:
   policy.yaml: |
-    {{- .Values.policy | nindent 4 }}
+    {{- .Values.policy | toYaml | nindent 4 }}
