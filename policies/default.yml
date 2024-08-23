@@ -1,0 +1,24 @@
+apiVersion: crd.projectcalico.org/v1
+kind: NetworkPolicy
+metadata:
+  name: default
+  namespace: default
+spec:
+  order: 1500
+  selector: all()
+  types:
+    - Egress
+  egress:
+    # Allow DNS
+    - action: Allow
+      destination:
+        selector: kubernetes.io/cluster-service == true
+        namespaceSelector: projectcalico.org/name == 'kube-system'
+        ports:
+          - 53
+    # Allow to that CIDR
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets:
+          - 10.32.0.0/16

@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user
+  namespace: default
+spec:
+  policyTypes:
+    - Egress
+  podSelector:
+    matchLabels:
+      app: laser
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [laser]
+  egress:
+    - to:
+      - ipBlock:
+          cidr: 10.32.12.34/32
+    - ports:
+        - port: 8000
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: reporter
+              component: proxy
