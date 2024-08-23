@@ -4,17 +4,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"log"
 	"os"
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -79,6 +83,30 @@ func createOrReplace(
 	}
 }
 
+func getLogs(pod string, container string, clientset *kubernetes.Clientset, t *testing.T) string {
+	log.Print("Getting logs")
+	podsClient := clientset.CoreV1().Pods(NAMESPACE)
+	opts := corev1.PodLogOptions{
+		Container: container,
+		Follow:    true,
+	}
+	logs, err := podsClient.GetLogs(pod, &opts).Stream(context.TODO())
+	if err != nil {
+		t.Fatalf("Error getting pod logs: %s", err)
+	}
+	defer logs.Close()
+
+	buf := new(bytes.Buffer)
+	_, err = io.Copy(buf, logs)
+	if err != nil {
+		t.Fatalf("Error copying pod logs: %s", err)
+	}
+	s := buf.String()
+	log.Print(len(s))
+	log.Print(s)
+	return s
+}
+
 func TestIntegration(t *testing.T) {
 	// This requires that a Kubernetes cluster be available to test against
 	// It needs to have Calico installed
@@ -90,6 +118,9 @@ func TestIntegration(t *testing.T) {
 		log.Fatalf("Can't load config: %s", err)
 	}
 	config.UserAgent = "calico-auto-policy_test"
+
+	// Create clientset
+	clientset, err := kubernetes.NewForConfig(config)
 
 	// Create the dynamic client
 	dynclient, err := dynamic.NewForConfig(config)
@@ -190,7 +221,9 @@ func TestIntegration(t *testing.T) {
 	script := `
 		set -eu
 		sleep 10
-		curl nolabels.testpods:8080
+		for podname in nolabels; do
+		curl -s -o /dev/null --max-time 3 -w "${podname} %{http_code}\\n" http://${podname}.testpods:8080/
+		done
 	`
 	pod := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -221,4 +254,7 @@ func TestIntegration(t *testing.T) {
 		pod,
 		t,
 	)
+
+	time.Sleep(20 * time.Second)
+	getLogs("connector", "connector", clientset, t)
 }
