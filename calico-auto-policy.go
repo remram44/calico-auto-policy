@@ -66,16 +66,16 @@ func main() {
 		}
 	}
 
-	// Create the dynamic clientset
-	dynclientset, err := dynamic.NewForConfig(config)
+	// Create the dynamic client
+	dynclient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		log.Fatalf("Can't create clientset: %s", err)
+		log.Fatalf("Can't create client: %s", err)
 	}
 
 	// Setup an informer
 	var informerFactory dynamicinformer.DynamicSharedInformerFactory
 	informerFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(
-		dynclientset,
+		dynclient,
 		5*time.Minute,
 		metav1.NamespaceAll,
 		nil,
@@ -99,7 +99,7 @@ func main() {
 					k8sPolicy.GetName(),
 				)
 
-				addPolicy(dynclientset, k8sPolicy, policyTemplate, ctx)
+				addPolicy(dynclient, k8sPolicy, policyTemplate, ctx)
 			},
 			UpdateFunc: func(oldObj, obj interface{}) {
 				k8sPolicy := obj.(*unstructured.Unstructured)
@@ -110,7 +110,7 @@ func main() {
 					k8sPolicy.GetName(),
 				)
 
-				addPolicy(dynclientset, k8sPolicy, policyTemplate, ctx)
+				addPolicy(dynclient, k8sPolicy, policyTemplate, ctx)
 			},
 			DeleteFunc: func(obj interface{}) {
 				k8sPolicy := obj.(*unstructured.Unstructured)
@@ -121,7 +121,7 @@ func main() {
 					k8sPolicy.GetName(),
 				)
 
-				removePolicy(dynclientset, k8sPolicy, ctx)
+				removePolicy(dynclient, k8sPolicy, ctx)
 			},
 		},
 		5*time.Minute,
@@ -222,7 +222,7 @@ func generateCalicoPolicy(
 }
 
 func addPolicy(
-	dynclientset *dynamic.DynamicClient,
+	dynclient *dynamic.DynamicClient,
 	k8sPolicy *unstructured.Unstructured,
 	policyTemplate map[string]interface{},
 	ctx context.Context,
@@ -232,7 +232,7 @@ func addPolicy(
 		return err
 	}
 
-	_, err = dynclientset.Resource(schema.GroupVersionResource{
+	_, err = dynclient.Resource(schema.GroupVersionResource{
 		Group:    "networking.k8s.io",
 		Version:  "v1",
 		Resource: "networkpolicies",
@@ -245,11 +245,11 @@ func addPolicy(
 }
 
 func removePolicy(
-	dynclientset *dynamic.DynamicClient,
+	dynclient *dynamic.DynamicClient,
 	k8sPolicy *unstructured.Unstructured,
 	ctx context.Context,
 ) error {
-	return dynclientset.Resource(schema.GroupVersionResource{
+	return dynclient.Resource(schema.GroupVersionResource{
 		Group:    "networking.k8s.io",
 		Version:  "v1",
 		Resource: "networkpolicies",
